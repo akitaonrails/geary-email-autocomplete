@@ -37,9 +37,13 @@ Pick the package that matches your Geary package, matching the pattern used by
 `geary-hide-sidebar`:
 
 ```sh
-yay -S geary-email-autocomplete       # source build; depends on geary-git
-yay -S geary-email-autocomplete-bin   # prebuilt x86_64 .so; depends on geary
+yay -S geary-email-autocomplete       # source build, any arch
+yay -S geary-email-autocomplete-bin   # prebuilt x86_64 .so
 ```
+
+Both packages work with either `geary` or `geary-git`; they intentionally do not
+depend on either one directly because those packages conflict and `geary-git`
+does not provide `geary`.
 
 The package installs to `/usr/lib/geary-email-autocomplete/` and patches both
 Geary launch paths:

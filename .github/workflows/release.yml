@@ -75,8 +75,8 @@ jobs:
             echo "## Install (Arch / AUR)"
             echo
             echo '```bash'
-            echo "yay -S geary-email-autocomplete       # source build; depends on geary-git"
-            echo "yay -S geary-email-autocomplete-bin   # prebuilt .so; depends on geary stable"
+            echo "yay -S geary-email-autocomplete       # source build, any arch"
+            echo "yay -S geary-email-autocomplete-bin   # prebuilt .so, x86_64"
             echo '```'
             echo
             echo "The package patches Geary's desktop entry and D-Bus service to append"
