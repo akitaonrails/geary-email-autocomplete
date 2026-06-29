@@ -128,7 +128,7 @@ static void test_gtk_attach(void) {
     g_assert_nonnull(ctx);
     gtk_entry_set_text(GTK_ENTRY(entry), "bob@example.com, ali, zed@example.com");
     gtk_editable_set_position(GTK_EDITABLE(entry), (int)g_utf8_strlen("bob@example.com, ali", -1));
-    update_completion_model(ctx);
+    g_assert_cmpuint(update_completion_model(ctx, FALSE), ==, 1);
     GtkTreeIter iter;
     g_assert_true(gtk_tree_model_get_iter_first(GTK_TREE_MODEL(ctx->store), &iter));
     g_assert_true(on_match_selected(ctx->completion, GTK_TREE_MODEL(ctx->store), &iter, ctx));

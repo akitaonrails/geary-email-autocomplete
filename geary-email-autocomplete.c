@@ -400,7 +400,7 @@ static void start_index_thread(void) {
     g_thread_unref(thread);
 }
 
-static void update_completion_model(EntryContext *ctx) {
+static guint update_completion_model(EntryContext *ctx, gboolean show_popup) {
     gtk_list_store_clear(ctx->store);
     const char *text = gtk_entry_get_text(ctx->entry);
     int cursor = gtk_editable_get_position(GTK_EDITABLE(ctx->entry));
@@ -422,13 +422,18 @@ static void update_completion_model(EntryContext *ctx) {
         gtk_list_store_append(ctx->store, &it);
         gtk_list_store_set(ctx->store, &it, COL_TEXT, formatted, COL_EMAIL, email, -1);
     }
+    guint match_count = rows->len / 2;
+    if (match_count > 0 && show_popup) gtk_entry_completion_complete(ctx->completion);
+    debug_log("completion update entry=%s query='%s' matches=%u",
+              G_OBJECT_TYPE_NAME(ctx->entry), seg.text, match_count);
     g_ptr_array_free(rows, TRUE);
     g_free(seg.text);
+    return match_count;
 }
 
 static void on_entry_changed(GtkEditable *editable, gpointer user_data) {
     (void)editable;
-    update_completion_model((EntryContext *)user_data);
+    update_completion_model((EntryContext *)user_data, TRUE);
 }
 
 static gboolean completion_match_all(GtkEntryCompletion *completion, const gchar *key, GtkTreeIter *iter, gpointer user_data) {
@@ -450,7 +455,7 @@ static gboolean on_match_selected(GtkEntryCompletion *completion, GtkTreeModel *
     gtk_editable_set_position(GTK_EDITABLE(ctx->entry), new_cursor);
     g_signal_handler_unblock(ctx->entry, ctx->changed_id);
     g_free(new_text); g_free(value);
-    update_completion_model(ctx);
+    gtk_list_store_clear(ctx->store);
     return TRUE;
 }
 
@@ -506,6 +511,7 @@ static gboolean setup_entry(GtkEntry *entry, gboolean allow_fallback) {
     gtk_entry_completion_set_model(ctx->completion, GTK_TREE_MODEL(ctx->store));
     gtk_entry_completion_set_text_column(ctx->completion, COL_TEXT);
     gtk_entry_completion_set_inline_completion(ctx->completion, FALSE);
+    gtk_entry_completion_set_inline_selection(ctx->completion, TRUE);
     gtk_entry_completion_set_popup_completion(ctx->completion, TRUE);
     gtk_entry_completion_set_minimum_key_length(ctx->completion, 1);
     gtk_entry_completion_set_match_func(ctx->completion, completion_match_all, NULL, NULL);
@@ -514,7 +520,8 @@ static gboolean setup_entry(GtkEntry *entry, gboolean allow_fallback) {
     gtk_entry_set_completion(entry, ctx->completion);
     g_object_set_data_full(G_OBJECT(entry), CONTEXT_DATA_KEY, ctx, context_destroy);
     ctx->notify_completion_id = g_signal_connect(entry, "notify::completion", G_CALLBACK(on_entry_completion_notify), ctx);
-    update_completion_model(ctx);
+    debug_log("attached module completion to entry type=%s original=%s", entry_type, comp_type);
+    update_completion_model(ctx, FALSE);
     return TRUE;
 }
 
