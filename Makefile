@@ -20,11 +20,11 @@ $(TEST): test_geary_email_autocomplete.c geary-email-autocomplete.c
 	$(CC) $(CFLAGS) -o $@ test_geary_email_autocomplete.c $(PKG_CFLAGS) $(PKG_LIBS) $(LDFLAGS)
 
 test check: $(TEST) $(MODULE)
-	xvfb-run -a ./$(TEST)
+	NO_AT_BRIDGE=1 xvfb-run -a ./$(TEST)
 
 smoke: $(TEST) $(MODULE)
 	nm -D $(MODULE) | grep ' T gtk_module_init'
-	xvfb-run -a env GTK_MODULES=$(CURDIR)/$(MODULE) GEARY_EMAIL_AUTOCOMPLETE_DEBUG=1 ./$(TEST) --quiet
+	NO_AT_BRIDGE=1 xvfb-run -a env GTK_MODULES=$(CURDIR)/$(MODULE) GEARY_EMAIL_AUTOCOMPLETE_DEBUG=1 ./$(TEST) --quiet
 
 run: $(MODULE)
 	GTK_MODULES=$(CURDIR)/$(MODULE) geary
