@@ -1,5 +1,7 @@
 # geary-email-autocomplete
 
+![Geary recipient autocomplete popup](assets/screenshot.png?v=20260629-162327)
+
 GTK3 module that widens Geary recipient autocomplete by reading Geary's contact
 databases read-only and suggesting contacts with `highest_importance >= 30`
 (`SEEN`). Geary already has built-in composer autocomplete, but stock Geary only
