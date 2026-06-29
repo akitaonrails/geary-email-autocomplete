@@ -34,6 +34,7 @@ typedef struct {
     gulong changed_id;
     gulong selected_id;
     gulong notify_completion_id;
+    guint complete_idle_id;
 } EntryContext;
 
 enum { COL_TEXT, COL_EMAIL, N_COLS };
@@ -49,6 +50,7 @@ static gboolean index_started = FALSE;
 static gulong map_hook_id = 0;
 
 static gboolean scan_toplevels_idle(gpointer unused);
+static gboolean complete_in_idle(gpointer user_data);
 
 static void debug_log(const char *fmt, ...) G_GNUC_PRINTF(1, 2);
 static void debug_log(const char *fmt, ...) {
@@ -435,7 +437,9 @@ static guint update_completion_model(EntryContext *ctx, gboolean show_popup) {
         gtk_list_store_set(ctx->store, &it, COL_TEXT, formatted, COL_EMAIL, email, -1);
     }
     guint match_count = rows->len / 2;
-    if (match_count > 0 && show_popup) gtk_entry_completion_complete(ctx->completion);
+    if (match_count > 0 && show_popup && ctx->complete_idle_id == 0) {
+        ctx->complete_idle_id = g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, complete_in_idle, ctx, NULL);
+    }
     debug_log("completion update entry=%s query='%s' matches=%u",
               G_OBJECT_TYPE_NAME(ctx->entry), seg.text, match_count);
     g_ptr_array_free(rows, TRUE);
@@ -451,6 +455,15 @@ static void on_entry_changed(GtkEditable *editable, gpointer user_data) {
 static gboolean completion_match_all(GtkEntryCompletion *completion, const gchar *key, GtkTreeIter *iter, gpointer user_data) {
     (void)completion; (void)key; (void)iter; (void)user_data;
     return TRUE;
+}
+
+static gboolean complete_in_idle(gpointer user_data) {
+    EntryContext *ctx = user_data;
+    if (!ctx || !ctx->entry || g_object_get_data(G_OBJECT(ctx->entry), CONTEXT_DATA_KEY) != ctx) return G_SOURCE_REMOVE;
+    ctx->complete_idle_id = 0;
+    debug_log("showing completion popup for entry=%s", G_OBJECT_TYPE_NAME(ctx->entry));
+    gtk_entry_completion_complete(ctx->completion);
+    return G_SOURCE_REMOVE;
 }
 
 static gboolean on_match_selected(GtkEntryCompletion *completion, GtkTreeModel *model, GtkTreeIter *iter, gpointer user_data) {
@@ -480,6 +493,7 @@ static void context_destroy(gpointer data) {
         g_signal_handler_disconnect(ctx->completion, ctx->selected_id);
     if (ctx->entry && ctx->notify_completion_id && g_signal_handler_is_connected(ctx->entry, ctx->notify_completion_id))
         g_signal_handler_disconnect(ctx->entry, ctx->notify_completion_id);
+    if (ctx->complete_idle_id) g_source_remove(ctx->complete_idle_id);
     g_clear_object(&ctx->original);
     g_clear_object(&ctx->completion);
     g_clear_object(&ctx->store);
