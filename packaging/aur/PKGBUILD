@@ -3,15 +3,15 @@
 pkgname=geary-email-autocomplete
 pkgver=0.1.6
 pkgrel=1
-pkgdesc="GTK3 module that widens Geary recipient autocomplete from its contact history"
+pkgdesc="GTK3 module that widens Geary recipient autocomplete and adds image copy"
 arch=('x86_64' 'aarch64')
 url="https://github.com/akitaonrails/geary-email-autocomplete"
 license=('MIT')
-# The module links only against GTK/GLib/SQLite and can run with either stable
+# The module links only against GTK/WebKit/GLib/SQLite and can run with either stable
 # `geary` or `geary-git`. Do not depend on either package directly: geary-git
 # conflicts with geary but does not provide it, so a hard dependency would force
 # the wrong variant on some systems.
-depends=('gtk3' 'glib2' 'sqlite')
+depends=('gtk3' 'webkit2gtk-4.1' 'glib2' 'sqlite')
 optdepends=('geary: stable Geary client'
             'geary-git: development Geary client')
 makedepends=('pkgconf')

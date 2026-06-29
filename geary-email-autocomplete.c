@@ -1,4 +1,5 @@
 #include <gtk/gtk.h>
+#include <webkit2/webkit2.h>
 #include <glib/gstdio.h>
 #include <sqlite3.h>
 #include <dirent.h>
@@ -12,6 +13,7 @@
 
 #define MODULE_DATA_KEY "geary-email-autocomplete-processed"
 #define CONTEXT_DATA_KEY "geary-email-autocomplete-context"
+#define WEBKIT_DATA_KEY "geary-email-autocomplete-webkit-processed"
 #define SEEN_IMPORTANCE 30
 
 typedef struct {
@@ -55,8 +57,48 @@ static gulong map_hook_id = 0;
 
 static gboolean scan_toplevels_idle(gpointer unused);
 static void hide_suggestion_popover(EntryContext *ctx);
-
 static void debug_log(const char *fmt, ...) G_GNUC_PRINTF(1, 2);
+
+static gboolean webkit_context_menu_has_action(WebKitContextMenu *menu, WebKitContextMenuAction action) {
+    GList *items = webkit_context_menu_get_items(menu);
+    for (GList *l = items; l; l = l->next) {
+        WebKitContextMenuItem *item = l->data;
+        if (!webkit_context_menu_item_is_separator(item) &&
+            webkit_context_menu_item_get_stock_action(item) == action) {
+            g_list_free(items);
+            return TRUE;
+        }
+    }
+    g_list_free(items);
+    return FALSE;
+}
+
+static gboolean on_webkit_context_menu(WebKitWebView *web_view,
+                                       WebKitContextMenu *menu,
+                                       GdkEvent *event,
+                                       WebKitHitTestResult *hit_test_result,
+                                       gpointer user_data) {
+    (void)web_view; (void)event; (void)user_data;
+    if (!hit_test_result || !webkit_hit_test_result_context_is_image(hit_test_result)) return FALSE;
+    if (webkit_context_menu_has_action(menu, WEBKIT_CONTEXT_MENU_ACTION_COPY_IMAGE_TO_CLIPBOARD)) return FALSE;
+
+    WebKitContextMenuItem *copy_image = webkit_context_menu_item_new_from_stock_action_with_label(
+        WEBKIT_CONTEXT_MENU_ACTION_COPY_IMAGE_TO_CLIPBOARD, "Copy Image");
+    webkit_context_menu_prepend(menu, copy_image);
+    const char *image_uri = webkit_hit_test_result_get_image_uri(hit_test_result);
+    debug_log("added Copy Image context menu item for image uri=%s",
+              image_uri ? image_uri : "(none)");
+    return FALSE;
+}
+
+static gboolean setup_webkit_view(WebKitWebView *web_view) {
+    if (g_object_get_data(G_OBJECT(web_view), WEBKIT_DATA_KEY)) return FALSE;
+    g_object_set_data(G_OBJECT(web_view), WEBKIT_DATA_KEY, GINT_TO_POINTER(1));
+    g_signal_connect(web_view, "context-menu", G_CALLBACK(on_webkit_context_menu), NULL);
+    debug_log("attached image copy context menu to web view type=%s", G_OBJECT_TYPE_NAME(web_view));
+    return TRUE;
+}
+
 static void debug_log(const char *fmt, ...) {
     if (!opt_debug) return;
     va_list ap;
@@ -668,11 +710,13 @@ static gboolean map_hook(GSignalInvocationHint *ihint, guint n_param_values, con
     if (n_param_values < 1) return TRUE;
     gpointer obj = g_value_get_object(&param_values[0]);
     if (GTK_IS_ENTRY(obj)) setup_entry(GTK_ENTRY(obj), TRUE);
+    if (WEBKIT_IS_WEB_VIEW(obj)) setup_webkit_view(WEBKIT_WEB_VIEW(obj));
     return TRUE;
 }
 
 static void scan_widget_tree(GtkWidget *widget) {
     if (GTK_IS_ENTRY(widget)) setup_entry(GTK_ENTRY(widget), TRUE);
+    if (WEBKIT_IS_WEB_VIEW(widget)) setup_webkit_view(WEBKIT_WEB_VIEW(widget));
     if (GTK_IS_CONTAINER(widget)) {
         GList *children = gtk_container_get_children(GTK_CONTAINER(widget));
         for (GList *l = children; l; l = l->next) scan_widget_tree(GTK_WIDGET(l->data));

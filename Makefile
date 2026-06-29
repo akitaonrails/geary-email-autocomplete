@@ -1,6 +1,7 @@
 CC ?= cc
-PKG_CFLAGS := $(shell pkg-config --cflags gtk+-3.0 sqlite3)
-PKG_LIBS := $(shell pkg-config --libs gtk+-3.0 sqlite3)
+WEBKIT_PKG := $(shell pkg-config --exists webkit2gtk-4.1 && echo webkit2gtk-4.1 || echo webkit2gtk-4.0)
+PKG_CFLAGS := $(shell pkg-config --cflags gtk+-3.0 sqlite3 $(WEBKIT_PKG))
+PKG_LIBS := $(shell pkg-config --libs gtk+-3.0 sqlite3 $(WEBKIT_PKG))
 CFLAGS ?= -O2 -g -Wall -Wextra -Werror
 LDFLAGS ?=
 

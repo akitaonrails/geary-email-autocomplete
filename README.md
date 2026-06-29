@@ -6,7 +6,8 @@ GTK3 module that widens Geary recipient autocomplete by reading Geary's contact
 databases read-only and suggesting contacts with `highest_importance >= 30`
 (`SEEN`). Geary already has built-in composer autocomplete, but stock Geary only
 shows contacts at a higher threshold, so many legitimate seen senders never
-appear.
+appear. It also adds WebKitGTK's stock **Copy Image** action to image context
+menus in Geary's message viewer.
 
 ## Build and test
 
