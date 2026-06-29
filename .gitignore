@@ -1,0 +1,4 @@
+.slim/deepwork/
+*.so
+*.o
+test_geary_email_autocomplete

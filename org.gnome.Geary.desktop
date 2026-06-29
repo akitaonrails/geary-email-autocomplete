@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Geary (autocomplete + optional sidebar module)
+Comment=Geary with widened recipient autocomplete via GTK_MODULES
+# EDIT THIS if running manually from a checkout. The AUR package patches the
+# system desktop entry and D-Bus service automatically. To load both this module
+# and geary-hide-sidebar manually, keep both absolute paths colon-separated.
+Exec=env GTK_MODULES=/usr/lib/geary-hide-sidebar/libgeary-hide-sidebar.so:/usr/lib/geary-email-autocomplete/libgeary-email-autocomplete.so geary %U
+Icon=org.gnome.Geary
+Terminal=false
+Categories=GNOME;GTK;Network;Email;
+MimeType=x-scheme-handler/mailto;application/x-extension-ics;text/calendar;
+StartupNotify=true

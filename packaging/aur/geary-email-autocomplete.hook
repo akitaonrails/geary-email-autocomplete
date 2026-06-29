@@ -1,0 +1,16 @@
+# Re-inject geary-email-autocomplete after Geary or companion GTK-module
+# package transactions. This matters because geary upgrades restore pristine
+# launchers, and older companion injectors may overwrite GTK_MODULES.
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = geary
+Target = geary-git
+Target = geary-hide-sidebar
+Target = geary-hide-sidebar-bin
+
+[Action]
+Description = Re-injecting geary-email-autocomplete into Geary's launchers...
+When = PostTransaction
+Exec = /usr/lib/geary-email-autocomplete/inject.sh apply
