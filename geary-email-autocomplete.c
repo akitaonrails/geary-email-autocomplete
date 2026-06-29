@@ -55,6 +55,18 @@ static void debug_log(const char *fmt, ...) {
     if (!opt_debug) return;
     va_list ap;
     va_start(ap, fmt);
+    char *msg = g_strdup_vprintf(fmt, ap);
+    va_end(ap);
+    g_printerr("[geary-email-autocomplete] %s\n", msg);
+    g_log("geary-email-autocomplete", G_LOG_LEVEL_DEBUG, "%s", msg);
+    g_free(msg);
+}
+
+static void debug_logv_legacy(const char *fmt, ...) G_GNUC_PRINTF(1, 2);
+static void G_GNUC_UNUSED debug_logv_legacy(const char *fmt, ...) {
+    if (!opt_debug) return;
+    va_list ap;
+    va_start(ap, fmt);
     g_logv("geary-email-autocomplete", G_LOG_LEVEL_DEBUG, fmt, ap);
     va_end(ap);
 }
