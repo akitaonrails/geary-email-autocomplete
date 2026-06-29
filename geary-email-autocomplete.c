@@ -453,12 +453,14 @@ static void show_suggestion_popover(EntryContext *ctx, GPtrArray *rows) {
     for (guint i = 0; rows && i + 1 < rows->len; i += 2) {
         const char *formatted = g_ptr_array_index(rows, i);
         GtkWidget *label = gtk_label_new(formatted);
+        gtk_widget_set_can_focus(label, FALSE);
         gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
         gtk_widget_set_margin_start(label, 8);
         gtk_widget_set_margin_end(label, 8);
         gtk_widget_set_margin_top(label, 4);
         gtk_widget_set_margin_bottom(label, 4);
         GtkWidget *row = gtk_list_box_row_new();
+        gtk_widget_set_can_focus(row, FALSE);
         gtk_container_add(GTK_CONTAINER(row), label);
         g_object_set_data_full(G_OBJECT(row), "completion-text", g_strdup(formatted), g_free);
         gtk_container_add(GTK_CONTAINER(ctx->listbox), row);
@@ -466,9 +468,12 @@ static void show_suggestion_popover(EntryContext *ctx, GPtrArray *rows) {
     ctx->visible_matches = match_count;
     ctx->selected_index = match_count > 0 ? 0 : -1;
     if (match_count > 0) {
+        int cursor = gtk_editable_get_position(GTK_EDITABLE(ctx->entry));
         GtkListBoxRow *first = gtk_list_box_get_row_at_index(ctx->listbox, 0);
         if (first) gtk_list_box_select_row(ctx->listbox, first);
         gtk_widget_show_all(ctx->popover);
+        gtk_widget_grab_focus(GTK_WIDGET(ctx->entry));
+        gtk_editable_set_position(GTK_EDITABLE(ctx->entry), cursor);
         debug_log("popover show entry=%s matches=%u", G_OBJECT_TYPE_NAME(ctx->entry), match_count);
     } else {
         hide_suggestion_popover(ctx);
@@ -633,7 +638,10 @@ static gboolean setup_entry(GtkEntry *entry, gboolean allow_fallback) {
     ctx->completion = gtk_entry_completion_new();
     ctx->popover = gtk_popover_new(GTK_WIDGET(entry));
     gtk_popover_set_position(GTK_POPOVER(ctx->popover), GTK_POS_BOTTOM);
+    gtk_popover_set_modal(GTK_POPOVER(ctx->popover), FALSE);
+    gtk_widget_set_can_focus(ctx->popover, FALSE);
     ctx->listbox = GTK_LIST_BOX(gtk_list_box_new());
+    gtk_widget_set_can_focus(GTK_WIDGET(ctx->listbox), FALSE);
     gtk_list_box_set_selection_mode(ctx->listbox, GTK_SELECTION_SINGLE);
     gtk_container_add(GTK_CONTAINER(ctx->popover), GTK_WIDGET(ctx->listbox));
     gtk_entry_completion_set_model(ctx->completion, GTK_TREE_MODEL(ctx->store));

@@ -131,8 +131,10 @@ static void test_gtk_attach(void) {
     g_assert_nonnull(ctx);
     gtk_entry_set_text(GTK_ENTRY(entry), "bob@example.com, ali, zed@example.com");
     gtk_editable_set_position(GTK_EDITABLE(entry), (int)g_utf8_strlen("bob@example.com, ali", -1));
+    int cursor_before_popup = gtk_editable_get_position(GTK_EDITABLE(entry));
     g_assert_cmpuint(update_completion_model(ctx, TRUE), ==, 1);
     while (gtk_events_pending()) gtk_main_iteration();
+    g_assert_cmpint(gtk_editable_get_position(GTK_EDITABLE(entry)), ==, cursor_before_popup);
     g_assert_nonnull(ctx->popover);
     g_assert_nonnull(ctx->listbox);
     g_assert_true(gtk_widget_get_visible(ctx->popover));
