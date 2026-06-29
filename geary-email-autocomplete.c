@@ -31,10 +31,14 @@ typedef struct {
     GtkEntryCompletion *original;
     GtkEntryCompletion *completion;
     GtkListStore *store;
+    GtkWidget *popover;
+    GtkListBox *listbox;
     gulong changed_id;
+    gulong key_press_id;
     gulong selected_id;
     gulong notify_completion_id;
-    guint complete_idle_id;
+    guint visible_matches;
+    int selected_index;
 } EntryContext;
 
 enum { COL_TEXT, COL_EMAIL, N_COLS };
@@ -50,7 +54,7 @@ static gboolean index_started = FALSE;
 static gulong map_hook_id = 0;
 
 static gboolean scan_toplevels_idle(gpointer unused);
-static gboolean complete_in_idle(gpointer user_data);
+static void hide_suggestion_popover(EntryContext *ctx);
 
 static void debug_log(const char *fmt, ...) G_GNUC_PRINTF(1, 2);
 static void debug_log(const char *fmt, ...) {
@@ -414,6 +418,112 @@ static void start_index_thread(void) {
     g_thread_unref(thread);
 }
 
+static void clear_listbox(GtkListBox *listbox) {
+    GList *children = gtk_container_get_children(GTK_CONTAINER(listbox));
+    for (GList *l = children; l; l = l->next) gtk_widget_destroy(GTK_WIDGET(l->data));
+    g_list_free(children);
+}
+
+static void accept_suggestion_text(EntryContext *ctx, const char *value) {
+    if (!ctx || !ctx->entry || !value) return;
+    int cursor = gtk_editable_get_position(GTK_EDITABLE(ctx->entry));
+    int new_cursor = 0;
+    char *new_text = replace_current_segment(gtk_entry_get_text(ctx->entry), cursor, value, &new_cursor);
+    debug_log("popover selection entry=%s value='%s'", G_OBJECT_TYPE_NAME(ctx->entry), value);
+    g_signal_handler_block(ctx->entry, ctx->changed_id);
+    gtk_entry_set_text(ctx->entry, new_text);
+    gtk_editable_set_position(GTK_EDITABLE(ctx->entry), new_cursor);
+    g_signal_handler_unblock(ctx->entry, ctx->changed_id);
+    g_free(new_text);
+    gtk_list_store_clear(ctx->store);
+    hide_suggestion_popover(ctx);
+}
+
+static void on_suggestion_row_activated(GtkListBox *box, GtkListBoxRow *row, gpointer user_data) {
+    (void)box;
+    EntryContext *ctx = user_data;
+    const char *value = g_object_get_data(G_OBJECT(row), "completion-text");
+    accept_suggestion_text(ctx, value);
+}
+
+static void show_suggestion_popover(EntryContext *ctx, GPtrArray *rows) {
+    if (!ctx || !ctx->popover || !ctx->listbox) return;
+    clear_listbox(ctx->listbox);
+    guint match_count = rows ? rows->len / 2 : 0;
+    for (guint i = 0; rows && i + 1 < rows->len; i += 2) {
+        const char *formatted = g_ptr_array_index(rows, i);
+        GtkWidget *label = gtk_label_new(formatted);
+        gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+        gtk_widget_set_margin_start(label, 8);
+        gtk_widget_set_margin_end(label, 8);
+        gtk_widget_set_margin_top(label, 4);
+        gtk_widget_set_margin_bottom(label, 4);
+        GtkWidget *row = gtk_list_box_row_new();
+        gtk_container_add(GTK_CONTAINER(row), label);
+        g_object_set_data_full(G_OBJECT(row), "completion-text", g_strdup(formatted), g_free);
+        gtk_container_add(GTK_CONTAINER(ctx->listbox), row);
+    }
+    ctx->visible_matches = match_count;
+    ctx->selected_index = match_count > 0 ? 0 : -1;
+    if (match_count > 0) {
+        GtkListBoxRow *first = gtk_list_box_get_row_at_index(ctx->listbox, 0);
+        if (first) gtk_list_box_select_row(ctx->listbox, first);
+        gtk_widget_show_all(ctx->popover);
+        debug_log("popover show entry=%s matches=%u", G_OBJECT_TYPE_NAME(ctx->entry), match_count);
+    } else {
+        hide_suggestion_popover(ctx);
+    }
+}
+
+static void hide_suggestion_popover(EntryContext *ctx) {
+    if (!ctx || !ctx->popover) return;
+    if (gtk_widget_get_visible(ctx->popover)) debug_log("popover hide entry=%s", ctx->entry ? G_OBJECT_TYPE_NAME(ctx->entry) : "(destroyed)");
+    gtk_widget_hide(ctx->popover);
+    ctx->visible_matches = 0;
+    ctx->selected_index = -1;
+}
+
+static gboolean popover_is_visible(EntryContext *ctx) {
+    return ctx && ctx->popover && gtk_widget_get_visible(ctx->popover) && ctx->visible_matches > 0;
+}
+
+static gboolean on_entry_key_press(GtkWidget *widget, GdkEventKey *event, gpointer user_data) {
+    (void)widget;
+    EntryContext *ctx = user_data;
+    if (!popover_is_visible(ctx)) return FALSE;
+    switch (event->keyval) {
+    case GDK_KEY_Escape:
+        hide_suggestion_popover(ctx);
+        return TRUE;
+    case GDK_KEY_Return:
+    case GDK_KEY_KP_Enter:
+    case GDK_KEY_Tab: {
+        GtkListBoxRow *row = gtk_list_box_get_selected_row(ctx->listbox);
+        if (!row) row = gtk_list_box_get_row_at_index(ctx->listbox, 0);
+        const char *value = row ? g_object_get_data(G_OBJECT(row), "completion-text") : NULL;
+        accept_suggestion_text(ctx, value);
+        return TRUE;
+    }
+    case GDK_KEY_Down:
+        if (ctx->visible_matches > 0) {
+            ctx->selected_index = (ctx->selected_index + 1) % (int)ctx->visible_matches;
+            gtk_list_box_select_row(ctx->listbox, gtk_list_box_get_row_at_index(ctx->listbox, ctx->selected_index));
+            return TRUE;
+        }
+        break;
+    case GDK_KEY_Up:
+        if (ctx->visible_matches > 0) {
+            ctx->selected_index = (ctx->selected_index <= 0) ? (int)ctx->visible_matches - 1 : ctx->selected_index - 1;
+            gtk_list_box_select_row(ctx->listbox, gtk_list_box_get_row_at_index(ctx->listbox, ctx->selected_index));
+            return TRUE;
+        }
+        break;
+    default:
+        break;
+    }
+    return FALSE;
+}
+
 static guint update_completion_model(EntryContext *ctx, gboolean show_popup) {
     gtk_list_store_clear(ctx->store);
     const char *text = gtk_entry_get_text(ctx->entry);
@@ -437,11 +547,12 @@ static guint update_completion_model(EntryContext *ctx, gboolean show_popup) {
         gtk_list_store_set(ctx->store, &it, COL_TEXT, formatted, COL_EMAIL, email, -1);
     }
     guint match_count = rows->len / 2;
-    if (match_count > 0 && show_popup && ctx->complete_idle_id == 0) {
-        ctx->complete_idle_id = g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, complete_in_idle, ctx, NULL);
-    }
-    debug_log("completion update entry=%s query='%s' matches=%u",
-              G_OBJECT_TYPE_NAME(ctx->entry), seg.text, match_count);
+    if (show_popup && match_count > 0) show_suggestion_popover(ctx, rows);
+    else hide_suggestion_popover(ctx);
+    debug_log("completion update entry=%s query='%s' matches=%u popover=%s",
+              G_OBJECT_TYPE_NAME(ctx->entry), seg.text, match_count,
+              (show_popup && match_count > 0) ? "shown" : "hidden");
+
     g_ptr_array_free(rows, TRUE);
     g_free(seg.text);
     return match_count;
@@ -457,30 +568,14 @@ static gboolean completion_match_all(GtkEntryCompletion *completion, const gchar
     return TRUE;
 }
 
-static gboolean complete_in_idle(gpointer user_data) {
-    EntryContext *ctx = user_data;
-    if (!ctx || !ctx->entry || g_object_get_data(G_OBJECT(ctx->entry), CONTEXT_DATA_KEY) != ctx) return G_SOURCE_REMOVE;
-    ctx->complete_idle_id = 0;
-    debug_log("showing completion popup for entry=%s", G_OBJECT_TYPE_NAME(ctx->entry));
-    gtk_entry_completion_complete(ctx->completion);
-    return G_SOURCE_REMOVE;
-}
-
 static gboolean on_match_selected(GtkEntryCompletion *completion, GtkTreeModel *model, GtkTreeIter *iter, gpointer user_data) {
     (void)completion;
     EntryContext *ctx = user_data;
     char *value = NULL;
     gtk_tree_model_get(model, iter, COL_TEXT, &value, -1);
     if (!value) return TRUE;
-    int cursor = gtk_editable_get_position(GTK_EDITABLE(ctx->entry));
-    int new_cursor = 0;
-    char *new_text = replace_current_segment(gtk_entry_get_text(ctx->entry), cursor, value, &new_cursor);
-    g_signal_handler_block(ctx->entry, ctx->changed_id);
-    gtk_entry_set_text(ctx->entry, new_text);
-    gtk_editable_set_position(GTK_EDITABLE(ctx->entry), new_cursor);
-    g_signal_handler_unblock(ctx->entry, ctx->changed_id);
-    g_free(new_text); g_free(value);
-    gtk_list_store_clear(ctx->store);
+    accept_suggestion_text(ctx, value);
+    g_free(value);
     return TRUE;
 }
 
@@ -489,11 +584,13 @@ static void context_destroy(gpointer data) {
     if (!ctx) return;
     if (ctx->entry && ctx->changed_id && g_signal_handler_is_connected(ctx->entry, ctx->changed_id))
         g_signal_handler_disconnect(ctx->entry, ctx->changed_id);
+    if (ctx->entry && ctx->key_press_id && g_signal_handler_is_connected(ctx->entry, ctx->key_press_id))
+        g_signal_handler_disconnect(ctx->entry, ctx->key_press_id);
     if (ctx->completion && ctx->selected_id && g_signal_handler_is_connected(ctx->completion, ctx->selected_id))
         g_signal_handler_disconnect(ctx->completion, ctx->selected_id);
     if (ctx->entry && ctx->notify_completion_id && g_signal_handler_is_connected(ctx->entry, ctx->notify_completion_id))
         g_signal_handler_disconnect(ctx->entry, ctx->notify_completion_id);
-    if (ctx->complete_idle_id) g_source_remove(ctx->complete_idle_id);
+    if (ctx->popover) gtk_widget_destroy(ctx->popover);
     g_clear_object(&ctx->original);
     g_clear_object(&ctx->completion);
     g_clear_object(&ctx->store);
@@ -534,14 +631,21 @@ static gboolean setup_entry(GtkEntry *entry, gboolean allow_fallback) {
     ctx->original = orig ? g_object_ref(orig) : NULL;
     ctx->store = gtk_list_store_new(N_COLS, G_TYPE_STRING, G_TYPE_STRING);
     ctx->completion = gtk_entry_completion_new();
+    ctx->popover = gtk_popover_new(GTK_WIDGET(entry));
+    gtk_popover_set_position(GTK_POPOVER(ctx->popover), GTK_POS_BOTTOM);
+    ctx->listbox = GTK_LIST_BOX(gtk_list_box_new());
+    gtk_list_box_set_selection_mode(ctx->listbox, GTK_SELECTION_SINGLE);
+    gtk_container_add(GTK_CONTAINER(ctx->popover), GTK_WIDGET(ctx->listbox));
     gtk_entry_completion_set_model(ctx->completion, GTK_TREE_MODEL(ctx->store));
     gtk_entry_completion_set_text_column(ctx->completion, COL_TEXT);
     gtk_entry_completion_set_inline_completion(ctx->completion, FALSE);
     gtk_entry_completion_set_inline_selection(ctx->completion, TRUE);
-    gtk_entry_completion_set_popup_completion(ctx->completion, TRUE);
+    gtk_entry_completion_set_popup_completion(ctx->completion, FALSE);
     gtk_entry_completion_set_minimum_key_length(ctx->completion, 1);
     gtk_entry_completion_set_match_func(ctx->completion, completion_match_all, NULL, NULL);
     ctx->changed_id = g_signal_connect(entry, "changed", G_CALLBACK(on_entry_changed), ctx);
+    ctx->key_press_id = g_signal_connect(entry, "key-press-event", G_CALLBACK(on_entry_key_press), ctx);
+    g_signal_connect(ctx->listbox, "row-activated", G_CALLBACK(on_suggestion_row_activated), ctx);
     ctx->selected_id = g_signal_connect(ctx->completion, "match-selected", G_CALLBACK(on_match_selected), ctx);
     gtk_entry_set_completion(entry, ctx->completion);
     g_object_set_data_full(G_OBJECT(entry), CONTEXT_DATA_KEY, ctx, context_destroy);

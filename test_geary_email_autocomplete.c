@@ -119,13 +119,39 @@ static void test_gtk_attach(void) {
     g_assert_true(setup_entry(GTK_ENTRY(entry), TRUE) == FALSE); /* plain GtkEntry should not be fallback */
     gtk_widget_destroy(entry);
 
+    GtkWidget *win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     entry = gtk_entry_new();
+    gtk_container_add(GTK_CONTAINER(win), entry);
+    gtk_widget_show_all(win);
     GtkEntryCompletion *stock = g_object_new(fake_contact_entry_completion_get_type(), NULL);
     gtk_entry_set_completion(GTK_ENTRY(entry), stock);
     g_object_unref(stock);
     g_assert_true(setup_entry(GTK_ENTRY(entry), FALSE));
     EntryContext *ctx = g_object_get_data(G_OBJECT(entry), CONTEXT_DATA_KEY);
     g_assert_nonnull(ctx);
+    gtk_entry_set_text(GTK_ENTRY(entry), "bob@example.com, ali, zed@example.com");
+    gtk_editable_set_position(GTK_EDITABLE(entry), (int)g_utf8_strlen("bob@example.com, ali", -1));
+    g_assert_cmpuint(update_completion_model(ctx, TRUE), ==, 1);
+    while (gtk_events_pending()) gtk_main_iteration();
+    g_assert_nonnull(ctx->popover);
+    g_assert_nonnull(ctx->listbox);
+    g_assert_true(gtk_widget_get_visible(ctx->popover));
+    GtkListBoxRow *row = gtk_list_box_get_row_at_index(ctx->listbox, 0);
+    g_assert_nonnull(row);
+    on_suggestion_row_activated(ctx->listbox, row, ctx);
+    g_assert_cmpstr(gtk_entry_get_text(GTK_ENTRY(entry)), ==,
+                    "bob@example.com, Alice Example <alice@example.com>, zed@example.com");
+    g_assert_false(gtk_widget_get_visible(ctx->popover));
+
+    gtk_entry_set_text(GTK_ENTRY(entry), "bob@example.com, ali, zed@example.com");
+    gtk_editable_set_position(GTK_EDITABLE(entry), (int)g_utf8_strlen("bob@example.com, ali", -1));
+    g_assert_cmpuint(update_completion_model(ctx, TRUE), ==, 1);
+    g_assert_true(gtk_widget_get_visible(ctx->popover));
+    GdkEventKey escape = {0};
+    escape.keyval = GDK_KEY_Escape;
+    g_assert_true(on_entry_key_press(entry, &escape, ctx));
+    g_assert_false(gtk_widget_get_visible(ctx->popover));
+
     gtk_entry_set_text(GTK_ENTRY(entry), "bob@example.com, ali, zed@example.com");
     gtk_editable_set_position(GTK_EDITABLE(entry), (int)g_utf8_strlen("bob@example.com, ali", -1));
     g_assert_cmpuint(update_completion_model(ctx, FALSE), ==, 1);
@@ -139,7 +165,7 @@ static void test_gtk_attach(void) {
     gtk_entry_set_completion(GTK_ENTRY(entry), replacement);
     g_object_unref(replacement);
     g_assert_null(g_object_get_data(G_OBJECT(entry), CONTEXT_DATA_KEY));
-    gtk_widget_destroy(entry);
+    gtk_widget_destroy(win);
 
     g_mutex_lock(&index_mutex);
     global_index = NULL; index_ready = FALSE;
